@@ -10,10 +10,9 @@ This Python module itself is licensed under WTFPL.
 To use it, rename the included apikey.example to apikey.py and include your API key and DevID.
 Don't have one? Email APIKeyRequest@ptv.vic.gov.au with subject "PTV Timetable API - request for key"
 '''
-import hmac, hashlib, hmac, urllib, urllib2
+import urllib, urllib2
 import json, datetime
 import apikey # This file must define devid and key
-ptvbase="http://timetableapi.ptv.vic.gov.au"
 
 def nownomicro():
   ''' Returns current time, without microseconds, as required by PTV API.'''
@@ -26,16 +25,14 @@ def now8601():
 
 def callAPI(api, args={}):
   ''' Makes the specified API call, handling signature computation and developer id.'''
-  import urllib
+  import hmac, hashlib 
+  ptvbase="http://timetableapi.ptv.vic.gov.au"
   preamble = "/v2/"
-  if args:
-    args = "&" + urllib.urlencode(args)
-  else:
-    args = ""
-  call = preamble + api + "?devid=" + apikey.devid + args
+  args['devid'] = apikey.devid
+  call = preamble + api + "?" + urllib.urlencode(args)
 
-  sig=hmac.new(apikey.devkey, call , hashlib.sha1).hexdigest().upper()
-  url=ptvbase + call + "&signature="+sig
+  sig=hmac.new(apikey.devkey, call, hashlib.sha1).hexdigest().upper()
+  url=ptvbase + call + "&signature=" + sig
   print url
   response = urllib2.urlopen(url)
   
@@ -54,14 +51,14 @@ def healthCheck():
 def stopsNearby(latitude, longitude):
   '''Stops Nearby returns up to 30 stops nearest to a specified coordinate."'''
   # stopsNearby(-38, 145)
-  return callAPI("nearme/latitude/" + str(latitude) + "/longitude/" + str(longitude))
+  return callAPI("nearme/latitude/%d/longitude/%d" % (latitude, longitude))
   
 
 def transportPOIsByMap(poi, lat1, long1, lat2, long2, griddepth, limit):
   '''"Transport POIs by Map returns a set of locations consisting of stops and/or myki ticket outlets (collectively known as points of interest - i.e. POIs) within a region demarcated on a map through a set of latitude and longitude coordinates."'''
   # transportPOIsByMap(2,-37,145,-37.5,145.5,3,10)
-  return callAPI("poi/" + str(poi) + "/lat1/" + str(lat1) + "/long1/" + str (long1) + 
-    "/lat2/" + str(lat2) + "/long2/" + str(long2) + "/griddepth/" + str(griddepth) + "/limit/" + str(limit)) 
+  return callAPI("poi/%d/lat1/%d/long1/%d/lat2/%d/long2/%d/griddepth/%d/limit/%d" %
+           (poi, lat1, long1, lat2, long2, griddepth, limit))
   
 
 def search(query):
@@ -72,29 +69,58 @@ def search(query):
 
 def broadNextDepartures(mode, stop, limit):
   '''"Broad Next Departures returns the next departure times at a prescribed stop irrespective of the line and direction of the service. For example, if the stop is Camberwell Station, Broad Next Departures will return the times for all three lines (Belgrave, Lilydale and Alamein) running in both directions (towards the city and away from the city)."'''
+  # This and all functions that have a 'mode' argument also allow strings: train,tram,bus,vline,nightrider
   # broadNextDepartures(0,1104,2)
 
-  return callAPI("mode/" + str(mode) + "/stop/" + str(stop) + "/departures/by-destination/limit/" + str(limit))
+  return callAPI("mode/%d/stop/%d/departures/by-destination/limit/%d" % (mode, stop, limit))
 
 def specificNextDepartures(mode, line, stop, directionid, limit, for_utc=nownomicro()):
   '''"Specific Next Departures returns the times for the next departures at a prescribed stop for a specific mode, line and direction. For example, if the stop is Camberwell Station, Specific Next Departures returns only the times for one line running in one direction (for example, the Belgrave line running towards the city)."'''
-  # specificNextDepartures("1","1881","2026","24","1")
+  # specificNextDepartures(1,1881,2026,24,1)
 
-  return callAPI("mode/" + str(mode) + "/line/" + str(line) + "/stop/" + str(stop) + "/directionid/" + str(directionid) + 
-        "/departures/all/limit/" + str(limit), 
-        {"for_utc": for_utc.isoformat() })
+  return callAPI("mode/%d/line/%d/stop/%d/directionid/%d/departures/all/limit/%d" % 
+            (modeFromString(mode), line, stop, directionid, limit), 
+            {"for_utc": for_utc.isoformat() })
 
 def stoppingPattern(mode,run,stop,for_utc=nownomicro()):
   ''' "The Stopping Pattern API returns the stopping pattern for a specific run (i.e. transport service) from a prescribed 
   stop at a prescribed time. The stopping pattern is comprised of timetable values ordered by stopping order."'''
   # stoppingPattern(0,4780,1104)
   # /v2/mode/%@/run/%@/stop/%@/stopping-pattern?for_utc=%@&devid=%@&signature=%@
-  return callAPI("mode/" + str(mode) + "/run/" + str(run) + "/stop/" + str(stop) + "/stopping-pattern", 
+  return callAPI("mode/%d/run/%d/stop/%d/stopping-pattern" % (modeFromString(mode), run, stop), 
     {"for_utc": for_utc.isoformat()})
 
 def stopsOnALine(mode,line):
-  '''"The Stops on a Line API returns a list of all the stops for a requested line, ordered by location name."'''
+  '''"The Stops on a Line API returns a list of all the stops for a requested line, ordered by location name.
+  '''
   # stopsOnALine(4,'1818')
-  h = callAPI("mode/" + str(mode) + "/line/" + line + "/stops-for-line")
+  h = callAPI("mode/%d/line/%d/stops-for-line" % (modeFromString(mode), line))
   return h
 
+### End official part. Now higher level functions.
+
+def modeFromString (modestr):
+  # Allows you to pass string modes to the API rather than their 0,1,2,3 etc.
+  #Mode:  0 Train (metropolitan) 
+  #       1 Tram 
+  #       2 Bus (metropolitan and regional, but not V/Line) 
+  #       3 V/Line train and coach 
+  #       4 NightRider
+  if type(modestr) == type(0):
+    return modestr
+  return ['train','tram','bus','vline','nightrider'].index(modestr)
+
+def findLine(name, transport_type=''):
+  lines = filter(lambda x: x['type'] == 'line', search(name))
+  if transport_type:
+    lines = filter(lambda x: x['result']['transport_type'] == transport_type, lines)
+  return lines
+
+
+def findStop(name, transport_type=''):
+  # transport_type: bus, vline, train, tram [vline is both coach and train!]
+  # Very broad queries (eg 'Railway Station') seem to return incomplete sets.
+  stops = filter(lambda x: x['type'] == 'stop', search(name))    
+  if transport_type:
+    stops = filter(lambda x: x['result']['transport_type'] == transport_type, stops)
+  return stops
