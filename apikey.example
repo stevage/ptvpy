@@ -1,0 +1,4 @@
+# Replace these values with your actual PTV API developer ID and key
+# then rename the file to apikey.py
+devid = "1900000
+devkey = "abcdef66-1234-789a-abba-123456789000"
