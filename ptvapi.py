@@ -9,6 +9,11 @@ This Python module itself is licensed under WTFPL.
 
 To use it, rename the included apikey.example to apikey.py and include your API key and DevID.
 Don't have one? Email APIKeyRequest@ptv.vic.gov.au with subject "PTV Timetable API - request for key"
+
+Dependencies:
+
+sudo pip install python-dateutil
+
 '''
 import urllib, urllib2
 import json, datetime
@@ -126,6 +131,7 @@ def modeFromString (modestr):
   return ['train','tram','bus','vline','nightrider'].index(modestr)
 
 def melbourneTime(isostr):
+
   from dateutil import parser, tz
   d = parser.parse(isostr)
   d.replace(tzinfo=tz.gettz('UTC')) # Not sure if needed
